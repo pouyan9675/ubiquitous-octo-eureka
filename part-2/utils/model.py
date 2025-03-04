@@ -127,6 +127,7 @@ class FusionModel(nn.Module):
                 gene_input_dim: int = 512,
                 hidden_size: int = 256,
                 attention_heads: int = 8,
+                dropout: float = 0.1,
                 freeze_text_encoder: bool = True,
                 internal_attn: bool = False,
                 add_cross_attn: bool = True,
@@ -142,6 +143,7 @@ class FusionModel(nn.Module):
                 dim2=gene_input_dim, 
                 num_heads=attention_heads,
                 internal_attn=internal_attn,
+                dropout=dropout,
             )
         
         if freeze_text_encoder:

@@ -52,7 +52,7 @@ class CellDataset(Dataset):
             "cell_type": self.cell_type[idx],
             "sex": self.sex[idx],
             "geneformer_embeddings": self.geneformer_embeddings[idx],
-            "donor_id": self.donor_id[idx]
+            "labels": self.donor_id[idx]
         }
 
 
