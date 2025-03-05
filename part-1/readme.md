@@ -59,17 +59,17 @@ To fuse transcriptomic embeddings $T_f \in \mathbb{R}^{(b \times T_k \times d_t)
 
 Formally, let:
 
-$$
+```math
 \mathbf{X_{gene}} \;=\; T_f \,\mathbf{W_{tr}}^K,\quad
 \mathbf{V_{gene}} \;=\; T_f \,\mathbf{W_{tr}}^V,\quad
 \mathbf{Q_{gene}}^{\prime} \;=\; \mathbf{Q^{(gene)}}\,\mathbf{W_{tr}}^Q,
-$$
+```
 
 where $\mathbf{W_{tr}}^K,\mathbf{W_{tr}}^V,\mathbf{W_{tr}}^Q$ are trainable projection matrices mapping the transcriptomic embeddings (and queries) into a shared dimension $h$. The resampled output $\mathbf{R_{gene}}$ of size $\mathbb{R}^{(M_t \times h)}$ is then obtained via cross-attention:
 
-$$
+```math
 \mathbf{R_{gene}} \;=\; \mathrm{softmax}\!\Bigl(\frac{\mathbf{Q^{\prime}_{gene}} \,\mathbf{X_{gene}}^\top}{\sqrt{h}}\Bigr)\,\mathbf{V_{gene}}.
-$$
+```
 
 Because there are $M_t$ learnable queries, we end up with exactly $M_t$ resampled tokens. In other words, no matter how large $T_k$ is, the resampler outputs a fixed number of transcriptomic tokens, each now projected into a space consistent with the text embeddings used by the LLM. This design ensures that transcriptomic features do not overwhelm the LLM’s input sequence and that they occupy the same semantic embedding space as the text tokens.
 
@@ -80,23 +80,20 @@ Because there are $M_t$ learnable queries, we end up with exactly $M_t$ resample
 
 Similarly, we use another cross-attention resampler for the image embeddings $\mathbf{I_f} \in \mathbb{R}^{(b \times I_p \times d_i)}$, where $I_p$ is the number of patch tokens. Just like in the transcriptomic module, we initialize $M_i$ trainable query vectors that attend over all image patch embeddings and condense them to exactly $M_i$ tokens. Formally, we project the image embeddings into key-value pairs and let the queries be projected as well:
 
-$$
+```math
 \mathbf{K}_{\text{img}} = \mathbf{I_f} \, \mathbf{W_{ir}}^K,
 \quad
 \mathbf{V}_{\text{img}} = \mathbf{I_f} \, \mathbf{W_{ir}}^V,
 \quad
 \mathbf{Q}^{\prime}_{\text{img}} = \mathbf{Q}^\text{(img)} \, \mathbf{W_{ir}}^Q,
-$$
+```
 
 where $\mathbf{Q}^\text{(img)} \in \mathbb{R}^{M_i \times h}$ are the learnable queries for the image modality. Each query then computes a weighted combination of all image patches via a softmax over key–value scores:
 
-$$
-\mathbf{R}_\text{img} =
-\mathrm{softmax}\!\Bigl(
-\frac{\mathbf{Q}^{\prime}_{\text{img}}\,\mathbf{K}_{\text{img}}^\top}{\sqrt{h}}
-\Bigr)
-\, \mathbf{V}_\text{img},
-$$
+```math
+\mathbf{R}_\text{img} = \mathrm{softmax}\!\Bigl(\frac{\mathbf{Q}^{\prime}_{\text{img}}\,\mathbf{K}_{\text{img}}^\top}{\sqrt{h}} \Bigr)\, \mathbf{V}_\text{img},
+```
+
 
 yielding $\mathbf{R}_\text{img} \in \mathbb{R}^{(M_i \times h)}$. This effectively “resamples” the original patch tokens into a fixed number of output tokens, now aligned with the LLM’s latent space dimension $h$.
 
@@ -110,13 +107,13 @@ This retrieval module operates exclusively on text-based knowledge. It functions
 #### A. Knowledge Base  
 The Knowledge Base consists of a textual database built from biomedical literature, primarily sourced from PubMed. It contains a large collection of research papers, clinical studies, and medical guidelines relevant to cell imaging and transcriptomics.  
 
-Mathematically, let \( \mathcal{D} \) represent the knowledge base containing **\( N \)** textual documents:
+Mathematically, let $\mathcal{D}$ represent the knowledge base containing $N$ textual documents:
 
-\[
+```math
 \mathcal{D} = \{D_1, D_2, ..., D_N\}
-\]
+```
 
-where each document \( D_i \) is an indexed biomedical text retrieved from PubMed or similar sources.
+where each document $D_i$ is an indexed biomedical text retrieved from PubMed or similar sources.
 
 Each document is preprocessed and stored in a vectorized form to enable efficient retrieval.
 
@@ -124,20 +121,16 @@ Each document is preprocessed and stored in a vectorized form to enable efficien
 The Retrieval Engine fetches relevant information based **solely on the user’s text prompt**, without incorporating cell images or transcriptomic sequences during retrieval. The retrieval process follows these steps:
 
 1. **Encode User Query**:  
-   Given a user query \( Q \), we encode it into an embedding vector using a retrieval-specific text encoder \( E_R \):
+   Given a user query $Q$, we encode it into an embedding vector using a retrieval-specific text encoder $E_R$:
 
-   \[
-   Q_e = E_R(Q)
-   \]
+   $$Q_e = E_R(Q)$$
 
 2. **Retrieve Relevant Documents**:  
-   The system searches for the **top \( k \)** most relevant documents from \( \mathcal{D} \) based on cosine similarity:
+   The system searches for the **top $k$** most relevant documents from $\mathcal{D}$ based on cosine similarity:
 
-   \[
-   D_{\text{retrieved}} = \underset{D \in \mathcal{D}}{\text{argmax}_k} \, \text{sim}(Q_e, E_R(D))
-   \]
+   $$D_{\text{retrieved}} = \underset{D \in \mathcal{D}}{\text{argmax}_k} \, \text{sim}(Q_e, E_R(D))$$
 
-   where \( \text{sim}(Q_e, E_R(D)) \) measures similarity between the encoded query and each document in the knowledge base.
+   where $\text{sim}(Q_e, E_R(D))$ measures similarity between the encoded query and each document in the knowledge base.
 
 
 By decoupling retrieval from multimodal processing, this module ensures that the chatbot remains **flexible and informative**, even when cell images and transcriptomic sequences are unavailable. It also enhances the accuracy of LLM-generated responses by incorporating fact-based knowledge retrieved from biomedical literature.
@@ -145,11 +138,11 @@ By decoupling retrieval from multimodal processing, this module ensures that the
 
 ### 4. Conversational LLM
 
-We use a pretrained LLM as backbone of our conversational AI to generate response for queries. This final stage merges all relevant data from previous modules to produce the system’s response \(A\). Now since all the tokens are in the shared space $h$ we can easily insert them in the LLM input sequence. Let \(Q\) be the original user query, \(D_{\text{retrieved}}\) be any text retrieved by the Knowledge Retrieval module, and \(\mathbf{R}_{\text{img}}\), \(\mathbf{R}_{\text{gene}}\) be the resampled tokens for image and gene modalities. We insert these tokens into the prompt with special brackets to contextualize their role within the text stream.
+We use a pretrained LLM as backbone of our conversational AI to generate response for queries. This final stage merges all relevant data from previous modules to produce the system’s response $A$. Now since all the tokens are in the shared space $h$ we can easily insert them in the LLM input sequence. Let $Q$ be the original user query, $D_{\text{retrieved}}$ be any text retrieved by the Knowledge Retrieval module, and $\mathbf{R}_{\text{img}}$, $\mathbf{R}_{\text{gene}}$ be the resampled tokens for image and gene modalities. We insert these tokens into the prompt with special brackets to contextualize their role within the text stream.
 
-Formally, we construct the augmented query \(Q_{\text{aug}}\) as follows:
+Formally, we construct the augmented query $Q_{\text{aug}}$ as follows:
 
-$$
+```math
 Q_{\text{aug}} =
 \text{concat}\Bigl(
    Q,\;
@@ -157,15 +150,16 @@ Q_{\text{aug}} =
    \text{"[IMAGE]"},\; \mathbf{R}_{\text{img}},\; \text{"[/IMAGE]"},\;
    \text{"[GENE]"},\; \mathbf{R}_{\text{gene}},\; \text{"[/GENE]"}
 \Bigr).
-$$
+```
 
-Both \(\mathbf{R}_{\text{img}}\) and \(\mathbf{R}_{\text{gene}}\) can be inserted as token embeddings or otherwise encoded text so that the LLM can attend to them. The LLM then produces the final answer:
+Both $\mathbf{R}_{\text{img}}$ and $\mathbf{R}_{\text{gene}}$ can be inserted as token embeddings or otherwise encoded text so that the LLM can attend to them. The LLM then produces the final answer:
 
-\[
+```math
 A = \text{LLM}\bigl(Q_{\text{aug}}\bigr).
-\]
+```
 
-By explicitly injecting the visual and transcriptomic tokens alongside any retrieved domain knowledge, the LLM can integrate low-level multimodal signals (\(\mathbf{R}_{\text{img}}\), \(\mathbf{R}_{\text{gene}}\)) with high-level textual information (\(D_{\text{retrieved}}\)), thereby grounding its responses in both the user’s query and relevant biomedical context.
+By explicitly injecting the visual and transcriptomic tokens alongside any retrieved domain knowledge, the LLM can integrate low-level multimodal signals 
+$(\mathbf{R}_{\text{img}}$, $\mathbf{R}_{\text{gene}})$ with high-level textual information $D_{\text{retrieved}}$, thereby grounding its responses in both the user’s query and relevant biomedical context.
 
 ---
 
