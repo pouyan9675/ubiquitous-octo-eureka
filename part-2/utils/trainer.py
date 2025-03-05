@@ -129,8 +129,10 @@ class TrainerBase:
                 
                 # Optional learning rate tracking
                 if self.scheduler:
+                    # Learning rate scheduling
                     current_lr = self.scheduler.get_last_lr()[0]
                     self.train_metrics['learning_rates'].append(current_lr)
+                    self.scheduler.step()
                 
                 # Logging and progress bar
                 if step % logging_steps == 0:
@@ -147,9 +149,6 @@ class TrainerBase:
                 self.validation_metrics.append(val_metrics)
 
 
-            # Learning rate scheduling
-            if self.scheduler:
-                self.scheduler.step()
         
         metrics = {
             'train': self.train_metrics,
@@ -242,7 +241,7 @@ class TrainerBase:
 
 class PretrainTrainer(TrainerBase):
     """
-    Standard trainer for supervised learning tasks.
+    Pretraining trainer for modality alignment tasks.
     """
     def train_step(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         """
@@ -303,7 +302,7 @@ class PretrainTrainer(TrainerBase):
 
 class ClassificationTrainer(TrainerBase):
     """
-    Standard trainer for supervised learning tasks.
+    Classification trainer for supervised learning tasks.
     """
     
     def __init__(
@@ -453,6 +452,55 @@ class ClassificationTrainer(TrainerBase):
         return result
 
 
+    def predict(self, test_loader: DataLoader) -> tuple:
+        """
+        Run prediction on a data loader and return predictions with labels.
+        
+        Args:
+            test_loader (DataLoader): Data loader for prediction.
+        
+        Returns:
+            tuple: (predictions, true_labels, probabilities)
+        """
+        self.model.eval()
+        all_preds = []
+        all_labels = []
+        
+        with torch.no_grad():
+            for batch in tqdm(test_loader, desc="Predicting"):
+                # Move batch to device
+                batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+                
+                # Prepare input
+                cell_type_list = batch["cell_type"]
+                gene_data = batch["geneformer_embeddings"]
+                sex_data = batch["sex"]
+                input_ = (cell_type_list, gene_data, sex_data)
+                
+                # Forward pass
+                if self.use_adversarial:
+                    logits, _ = self.model(input_)  # Ignore adversarial output
+                else:
+                    logits = self.model(input_)
+                
+                # Get predictions
+                preds = torch.argmax(logits, dim=1)
+                
+                # Store results
+                all_preds.append(preds.cpu())
+                if "labels" in batch:
+                    all_labels.append(batch["labels"].cpu())
+        
+        # Concatenate results
+        predictions = torch.cat(all_preds).numpy()
+        
+        if all_labels:
+            labels = torch.cat(all_labels).numpy()
+            return predictions, labels
+        else:
+            return predictions
+    
+
     def plot_training_metrics(self, save_path: Optional[str] = None):
         """
         Plot training metrics with adversarial components if enabled.
@@ -505,7 +553,144 @@ class ClassificationTrainer(TrainerBase):
         plt.tight_layout()
         
         if save_path:
-            plt.savefig(save_path)
+            plt.savefig(save_path, dpi=600, bbox_inches='tight', format='png')
         
         plt.show()
     
+
+class VanillaTrainer(TrainerBase):
+    """
+    Standard trainer for supervised learning tasks.
+    """
+    
+    def __init__(
+        self, 
+        model: nn.Module,
+        optimizer: Optimizer,
+        loss_fn: nn.Module,
+        scheduler: Optional[_LRScheduler] = None,
+        device: Optional[str] = None,
+    ):
+        """
+        Initialize a vanilla classification trainer to test the model without modality alignment.
+        
+        Args:
+            model (nn.Module): The neural network model to train.
+            optimizer (Optimizer): Optimizer for model parameters.
+            loss_fn (nn.Module): Loss function for the main task.
+            scheduler (Optional[_LRScheduler]): Learning rate scheduler.
+            device (Optional[str]): Compute device (cuda/mps/cpu).
+        """
+        super().__init__(model, optimizer, loss_fn, scheduler, device)
+        
+    
+    def train_step(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+        """
+        Training step for standard supervised learning.
+        
+        Args:
+            batch (Dict[str, Any]): Batch of training data.
+        
+        Returns:
+            Dict[str, torch.Tensor]: Training step results.
+        """
+        # Reset gradients
+        self.optimizer.zero_grad()
+        
+        # Prepare input
+        cell_type_list = batch["cell_type"]
+        gene_data = batch["geneformer_embeddings"]
+        sex_data = batch["sex"]
+        input_ = (cell_type_list, gene_data, sex_data)
+        
+        # Standard forward pass without adversarial component
+        output = self.model(input_)
+            
+        # Compute loss
+        labels = batch["labels"]
+        loss = self.loss_fn(output, labels)
+        
+        # Backward pass
+        loss.backward()
+        self.optimizer.step()
+        
+        return {
+            'loss': loss,
+            'output': output
+        }
+
+
+    def validate_step(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+        """
+        Validation step for standard supervised learning.
+        
+        Args:
+            batch (Dict[str, Any]): Batch of validation data.
+        
+        Returns:
+            Dict[str, torch.Tensor]: Validation step results.
+        """
+        with torch.no_grad():
+            cell_type_list = batch["cell_type"]
+            gene_data = batch["geneformer_embeddings"]
+            sex_data = batch["sex"]
+            input_ = (cell_type_list, gene_data, sex_data)
+            labels = batch["labels"]
+            output = self.model(input_)
+            loss = self.loss_fn(output, labels)                
+        
+        return {
+                'loss': loss,
+                'output': output
+            }
+
+
+    def predict(self, test_loader: DataLoader) -> tuple:
+        """
+        Run prediction on a data loader and return predictions with labels.
+        
+        Args:
+            test_loader (DataLoader): Data loader for prediction.
+        
+        Returns:
+            tuple: (predictions, true_labels, probabilities)
+        """
+        self.model.eval()
+        all_preds = []
+        all_labels = []
+        
+        with torch.no_grad():
+            for batch in tqdm(test_loader, desc="Predicting"):
+                # Move batch to device
+                batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+                
+                # Prepare input
+                cell_type_list = batch["cell_type"]
+                gene_data = batch["geneformer_embeddings"]
+                sex_data = batch["sex"]
+                input_ = (cell_type_list, gene_data, sex_data)
+                
+                # Forward pass
+                if self.use_adversarial:
+                    logits, _ = self.model(input_)  # Ignore adversarial output
+                else:
+                    logits = self.model(input_)
+                
+                # Get predictions
+                preds = torch.argmax(logits, dim=1)
+                
+                # Store results
+                all_preds.append(preds.cpu())
+                if "labels" in batch:
+                    all_labels.append(batch["labels"].cpu())
+        
+        # Concatenate results
+        predictions = torch.cat(all_preds).numpy()
+        
+        if all_labels:
+            labels = torch.cat(all_labels).numpy()
+            return predictions, labels
+        else:
+            return predictions
+    
+

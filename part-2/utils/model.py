@@ -1,5 +1,5 @@
 from typing import List
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -207,32 +207,28 @@ class FusionModel(nn.Module):
                 num_latent_vectors: int = 32,
                 dropout: float = 0.1,
                 freeze_text_encoder: bool = True,
-                add_cross_attn: bool = True,
         ):
         super().__init__()
         self.text_encoder = TextEncoder(model_name=text_encoder_id)
-        self.add_cross_attn = add_cross_attn
         self.hidden_size = hidden_size
-        if add_cross_attn:
-            self.x_attn = CrossModalAttention(
-                hidden_dim=hidden_size, 
-                dim1=self.text_encoder.text_hidden_dim, 
-                dim2=gene_input_dim, 
-                num_heads=attention_heads,
-                num_latent_vectors=num_latent_vectors,
-                dropout=dropout,
-            )
+        self.x_attn = CrossModalAttention(
+            hidden_dim=hidden_size, 
+            dim1=self.text_encoder.text_hidden_dim, 
+            dim2=gene_input_dim, 
+            num_heads=attention_heads,
+            num_latent_vectors=num_latent_vectors,
+            dropout=dropout,
+        )
         
         if freeze_text_encoder:
             for param in self.text_encoder.parameters():
                 param.requires_grad = False
         
     
-    def forward(self, x):
+    def forward(self, x, return_attn=False):
         text_input, gene_emb = x
         text_emb = self.text_encoder(text_input)  # (batch_size, text_hidden_dim)
-        if self.add_cross_attn:
-            text_emb, gene_emb = self.x_attn(text_emb, gene_emb)  # (batch_size, hidden_size)
+        text_emb, gene_emb = self.x_attn(text_emb, gene_emb, return_attn=return_attn)  # (batch_size, hidden_size)
         return text_emb, gene_emb           # two modals in the common latent space
 
 
@@ -252,6 +248,7 @@ class UnifiedMultiModalClassifier(FusionModel):
                 class_num: int,
                 dropout: float = 0.3,
                 lambda_adv: float = 0.1,
+                use_adversarial: bool = True,
                 *args, **kwargs
     ):
         super().__init__(*args, **kwargs)
@@ -263,17 +260,19 @@ class UnifiedMultiModalClassifier(FusionModel):
             nn.Linear(self.hidden_size, class_num)
         )
         
-        # Adversary for sex prediction (confounding variable)
-        self.adversary = nn.Sequential(
-            nn.Linear(self.hidden_size * 2, self.hidden_size // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(self.hidden_size // 2, 1)  # Binary prediction for sex
-        )
+        if use_adversarial:
+            # Adversary for sex prediction (confounding variable)
+            self.adversary = nn.Sequential(
+                nn.Linear(self.hidden_size * 2, self.hidden_size // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(self.hidden_size // 2, 1)  # Binary prediction for sex
+            )
+            self.lambda_adv = lambda_adv
         
-        self.lambda_adv = lambda_adv
+        self.use_adversarial = use_adversarial
         
-
+        
     def forward(self, x, reverse_lambda=1.0):
         text_input, gene_emb, sex = x
         text_emb, gene_emb = super().forward((text_input, gene_emb))  # apply cross-modal fusion
@@ -286,8 +285,7 @@ class UnifiedMultiModalClassifier(FusionModel):
         
         logits = self.classification_head(final_vec)    # Classification head
         
-        # check if model is in training mode to calculate and return adversary logits
-        if self.training:   
+        if self.use_adversarial:
             # Adversarial prediction with gradient reversal
             # The combined embedding passes through gradient reversal before adversary
             reversed_features = GradientReversalLayer.apply(combined_emb, reverse_lambda)
@@ -320,3 +318,26 @@ class GradientReversalLayer(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         return grad_output.neg() * ctx.alpha, None # Reverse the gradient
+
+
+class VanillaClassifier(nn.Module):
+    def __init__(self, class_num: int, dropout: float = 0.3):
+        super().__init__()
+        self.text_encoder = TextEncoder(model_name="dmis-lab/biobert-v1.1")
+        self.classification_head = nn.Sequential(
+            nn.Linear(768 + 512 + 1, 256),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, class_num)
+        )
+        
+        for param in self.text_encoder.parameters():
+            param.requires_grad = False
+        
+
+    def forward(self, x):
+        text, gene_emb, sex = x
+        text_emb = self.text_encoder(text)
+        final_vec = torch.cat([text_emb, gene_emb, sex.unsqueeze(1)], dim=1)
+        return self.classification_head(final_vec)
+    
