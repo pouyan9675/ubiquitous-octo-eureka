@@ -305,6 +305,46 @@ class ClassificationTrainer(TrainerBase):
     """
     Standard trainer for supervised learning tasks.
     """
+    
+    def __init__(
+        self, 
+        model: nn.Module,
+        optimizer: Optimizer,
+        loss_fn: nn.Module,
+        adv_loss_fn: Optional[nn.Module] = None,
+        lambda_adv: float = 0.1,
+        scheduler: Optional[_LRScheduler] = None,
+        device: Optional[str] = None,
+        use_adversarial: bool = False
+    ):
+        """
+        Initialize classification trainer with optional adversarial training.
+        
+        Args:
+            model (nn.Module): The neural network model to train.
+            optimizer (Optimizer): Optimizer for model parameters.
+            loss_fn (nn.Module): Loss function for the main task.
+            adv_loss_fn (Optional[nn.Module]): Loss function for the adversarial task.
+            lambda_adv (float): Weight for the adversarial loss component.
+            scheduler (Optional[_LRScheduler]): Learning rate scheduler.
+            device (Optional[str]): Compute device (cuda/mps/cpu).
+            use_adversarial (bool): Whether to use adversarial training.
+        """
+        super().__init__(model, optimizer, loss_fn, scheduler, device)
+        
+        # Adversarial training components
+        self.adv_loss_fn = adv_loss_fn
+        self.lambda_adv = lambda_adv
+        self.use_adversarial = use_adversarial
+        
+        # Additional metrics for adversarial training
+        if self.use_adversarial:
+            self.train_metrics.update({
+                'main_losses': [],
+                'adv_losses': []
+            })
+    
+    
     def train_step(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         """
         Training step for standard supervised learning.
@@ -321,23 +361,55 @@ class ClassificationTrainer(TrainerBase):
         # Prepare input
         cell_type_list = batch["cell_type"]
         gene_data = batch["geneformer_embeddings"]
-        input_ = (cell_type_list, gene_data, batch["sex"])
+        sex_data = batch["sex"]
+        input_ = (cell_type_list, gene_data, sex_data)
         
         # Forward pass
-        output = self.model(input_)
-        
-        # Compute loss
-        labels = batch["labels"]
-        loss = self.loss_fn(output, labels)
+        if self.use_adversarial:
+            logits, adv_logits = self.model(input_)
+            
+            # Compute main task loss
+            labels = batch["labels"]
+            main_loss = self.loss_fn(logits, labels)
+            
+            # Compute adversarial loss
+            adv_loss = self.adv_loss_fn(adv_logits.squeeze(), sex_data.float())
+            
+            # Total loss (note the negative sign for adversarial loss)
+            # We want to maximize adversarial loss (minimize its negative)
+            loss = main_loss - self.lambda_adv * adv_loss
+            
+            result = {
+                'loss': loss,
+                'main_loss': main_loss,
+                'adv_loss': adv_loss,
+                'logits': logits,
+                'adv_logits': adv_logits
+            }
+        else:
+            # Standard forward pass without adversarial component
+            output = self.model(input_)
+            
+            # Compute loss
+            labels = batch["labels"]
+            loss = self.loss_fn(output, labels)
+            
+            result = {
+                'loss': loss,
+                'output': output
+            }
         
         # Backward pass
         loss.backward()
         self.optimizer.step()
         
-        return {
-            'loss': loss,
-            'output': output
-        }
+        # Track additional metrics for adversarial training
+        if self.use_adversarial:
+            self.train_metrics['main_losses'].append(main_loss.item())
+            self.train_metrics['adv_losses'].append(adv_loss.item())
+        
+        return result
+
 
     def validate_step(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         """
@@ -352,121 +424,88 @@ class ClassificationTrainer(TrainerBase):
         with torch.no_grad():
             cell_type_list = batch["cell_type"]
             gene_data = batch["geneformer_embeddings"]
-            input_ = (cell_type_list, gene_data, batch["sex"])
-
-            output = self.model(input_)
+            sex_data = batch["sex"]
+            input_ = (cell_type_list, gene_data, sex_data)
             labels = batch["labels"]
-            loss = self.loss_fn(output, labels)
+
+            if self.use_adversarial:
+                logits, adv_logits = self.model(input_)
+                main_loss = self.loss_fn(logits, labels)
+                adv_loss = self.adv_loss_fn(adv_logits.squeeze(), sex_data.float())
+                loss = main_loss - self.lambda_adv * adv_loss
+                
+                result = {
+                    'loss': loss,
+                    'main_loss': main_loss,
+                    'adv_loss': adv_loss,
+                    'logits': logits,
+                    'adv_logits': adv_logits
+                }
+            else:
+                output = self.model(input_)
+                loss = self.loss_fn(output, labels)
+                
+                result = {
+                    'loss': loss,
+                    'output': output
+                }
         
-        return {
-            'loss': loss,
-            'output': output
-        }
-  
+        return result
+
+
+    def plot_training_metrics(self, save_path: Optional[str] = None):
+        """
+        Plot training metrics with adversarial components if enabled.
+        
+        Args:
+            save_path (Optional[str]): Path to save the plot.
+        """
+        if self.use_adversarial:
+            plt.figure(figsize=(15, 8))
+            
+            # Main loss plot
+            plt.subplot(231)
+            plt.plot(self.train_metrics['step_losses'])
+            plt.title('Combined Step Losses')
+            plt.xlabel('Steps')
+            plt.ylabel('Loss')
+            
+            # Main task loss
+            plt.subplot(232)
+            plt.plot(self.train_metrics['main_losses'])
+            plt.title('Main Task Losses')
+            plt.xlabel('Steps')
+            plt.ylabel('Loss')
+            
+            # Adversarial loss
+            plt.subplot(233)
+            plt.plot(self.train_metrics['adv_losses'])
+            plt.title('Adversarial Losses')
+            plt.xlabel('Steps')
+            plt.ylabel('Loss')
+            
+            # Epoch losses
+            plt.subplot(234)
+            plt.plot(self.train_metrics['epoch_losses'])
+            plt.title('Epoch Losses')
+            plt.xlabel('Epochs')
+            plt.ylabel('Loss')
+            
+            # Learning rates
+            if self.train_metrics['learning_rates']:
+                plt.subplot(235)
+                plt.plot(self.train_metrics['learning_rates'])
+                plt.title('Learning Rates')
+                plt.xlabel('Steps')
+                plt.ylabel('LR')
+        else:
+            # Use the parent class implementation for standard training
+            super().plot_training_metrics(save_path)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path)
+        
+        plt.show()
     
-class AdversarialTrainer(TrainerBase):
-    """
-    Adversarial trainer for domain adaptation and fair representation learning.
-    """
-    def __init__(
-        self, 
-        model: nn.Module,
-        optimizer_main: Optimizer,
-        optimizer_adv: Optimizer,
-        criterion_main: nn.Module,
-        criterion_adv: nn.Module,
-        lambda_adv: float = 1.0,
-        scheduler_main: Optional[_LRScheduler] = None,
-        scheduler_adv: Optional[_LRScheduler] = None,
-        device: Optional[str] = None
-    ):
-        """
-        Initialize adversarial trainer with main and adversarial components.
-        
-        Args:
-            model (nn.Module): Model with main and adversarial components.
-            optimizer_main (Optimizer): Optimizer for main task.
-            optimizer_adv (Optimizer): Optimizer for adversarial task.
-            criterion_main (nn.Module): Loss for main task.
-            criterion_adv (nn.Module): Loss for adversarial task.
-            lambda_adv (float): Adversarial loss weight.
-            scheduler_main (Optional[_LRScheduler]): Scheduler for main optimizer.
-            scheduler_adv (Optional[_LRScheduler]): Scheduler for adversary optimizer.
-            device (Optional[str]): Compute device.
-        """
-        super().__init__(model, optimizer_main, criterion_main, scheduler_main, device)
-        self.optimizer_adv = optimizer_adv
-        self.criterion_adv = criterion_adv
-        self.lambda_adv = lambda_adv
-        self.scheduler_adv = scheduler_adv
-
-    def train_step(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
-        """
-        Adversarial training step.
-        
-        Args:
-            batch (Dict[str, Any]): Batch of training data.
-        
-        Returns:
-            Dict[str, torch.Tensor]: Training step results.
-        """
-        # Prepare inputs
-        x_batch = batch["geneformer_embeddings"]
-        y_batch = batch["donor_id"]
-        sex_batch = batch["sex"]
-        cell_type_list = batch["cell_type"]
-        input_ = (cell_type_list, x_batch, sex_batch)
-
-        # Step 1: Update adversary
-        self.optimizer_adv.zero_grad()
-        logits, adversary_logits = self.model(input_, reverse_lambda=1.0)
-        loss_adv = self.criterion_adv(adversary_logits.squeeze(), sex_batch.float())
-        loss_adv.backward()
-        self.optimizer_adv.step()
-        
-        # Step 2: Update main model
-        self.optimizer.zero_grad()
-        logits, adversary_logits = self.model(input_, reverse_lambda=1.0)
-        loss_main = self.criterion_main(logits, y_batch)
-        loss_adv = self.criterion_adv(adversary_logits.squeeze(), sex_batch.float())
-        loss = loss_main - self.lambda_adv * loss_adv
-        loss.backward()
-        self.optimizer.step()
-
-        return {
-            'loss': loss,
-            'main_loss': loss_main,
-            'adv_loss': loss_adv,
-            'logits': logits,
-            'adversary_logits': adversary_logits
-        }
-
-    def validate_step(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
-        """
-        Validation step for adversarial training.
-        
-        Args:
-            batch (Dict[str, Any]): Batch of validation data.
-        
-        Returns:
-            Dict[str, torch.Tensor]: Validation step results.
-        """
-        with torch.no_grad():
-            x_batch = batch["geneformer_embeddings"]
-            y_batch = batch["donor_id"]
-            sex_batch = batch["sex"]
-            cell_type_list = batch["cell_type"]
-            input_ = (cell_type_list, x_batch, sex_batch)
-
-            logits, adversary_logits = self.model(input_, reverse_lambda=1.0)
-            loss_main = self.criterion_main(logits, y_batch)
-            loss_adv = self.criterion_adv(adversary_logits.squeeze(), sex_batch.float())
-            loss = loss_main - self.lambda_adv * loss_adv
-
-        return {
-            'loss': loss,
-            'main_loss': loss_main,
-            'adv_loss': loss_adv,
-            'logits': logits,
-            'adversary_logits': adversary_logits
-        }

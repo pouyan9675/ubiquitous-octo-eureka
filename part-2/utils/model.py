@@ -204,7 +204,7 @@ class FusionModel(nn.Module):
                 gene_input_dim: int = 512,
                 hidden_size: int = 256,
                 attention_heads: int = 8,
-                num_latent_vectors: int = 64,
+                num_latent_vectors: int = 32,
                 dropout: float = 0.1,
                 freeze_text_encoder: bool = True,
                 add_cross_attn: bool = True,
@@ -251,6 +251,7 @@ class UnifiedMultiModalClassifier(FusionModel):
     def __init__(self,
                 class_num: int,
                 dropout: float = 0.3,
+                lambda_adv: float = 0.1,
                 *args, **kwargs
     ):
         super().__init__(*args, **kwargs)
@@ -262,23 +263,38 @@ class UnifiedMultiModalClassifier(FusionModel):
             nn.Linear(self.hidden_size, class_num)
         )
         
-        # self.adversary = AdversarialModel(self.hidden_size)  # Adversary predicts sex or other confounders
-        # self.lambda_adv = lambda_adv
+        # Adversary for sex prediction (confounding variable)
+        self.adversary = nn.Sequential(
+            nn.Linear(self.hidden_size * 2, self.hidden_size // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(self.hidden_size // 2, 1)  # Binary prediction for sex
+        )
+        
+        self.lambda_adv = lambda_adv
         
 
-    def forward(self, x):
+    def forward(self, x, reverse_lambda=1.0):
         text_input, gene_emb, sex = x
         text_emb, gene_emb = super().forward((text_input, gene_emb))  # apply cross-modal fusion
-        final_vec = torch.cat([text_emb, gene_emb, sex.unsqueeze(1)], dim=1)  # Concatenate text and gene embeddings
+        
+        # Concatenate embeddings
+        combined_emb = torch.cat([text_emb, gene_emb], dim=1)
+        
+        # Final vector with sex for main task
+        final_vec = torch.cat([combined_emb, sex.unsqueeze(1)], dim=1)
+        
         logits = self.classification_head(final_vec)    # Classification head
         
-        # # Adversarial prediction (detach to avoid influencing main model)
-        # adv_input = final_vec[:, :-1]  # Remove `sex` before passing to adversary
-        # adversary_logits = self.adversary(GradientReversalLayer.apply(adv_input, reverse_lambda))
-        
-        # return logits, adversary_logits
-        
-        return logits
+        # check if model is in training mode to calculate and return adversary logits
+        if self.training:   
+            # Adversarial prediction with gradient reversal
+            # The combined embedding passes through gradient reversal before adversary
+            reversed_features = GradientReversalLayer.apply(combined_emb, reverse_lambda)
+            adversary_logits = self.adversary(reversed_features)
+            return logits, adversary_logits
+        else:
+            return logits
 
 
     def from_pretrained(self, path: str):
@@ -287,14 +303,20 @@ class UnifiedMultiModalClassifier(FusionModel):
         for param, value in state_dict.items():
             tgt_params[param] = value
         self.load_state_dict(tgt_params)
-        
-        
-class AdversarialModel(nn.Module):
-    def __init__(self, hidden_size):
-        super().__init__()
-        self.fc1 = nn.Linear(hidden_size * 2, hidden_size // 2)
-        self.fc2 = nn.Linear(hidden_size // 2, 1)  # Binary classification for sex confounders
     
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        return self.fc2(x)  # predict logits
+     
+class GradientReversalLayer(torch.autograd.Function):
+    """
+    Gradient Reversal Layer.
+    
+    This implementation uses the autograd.Function to create a custom 
+    layer that reverses the gradient during backpropagation.
+    """
+    @staticmethod
+    def forward(ctx, x, alpha):
+        ctx.alpha = alpha       # Store the alpha value for backward pass
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output.neg() * ctx.alpha, None # Reverse the gradient
