@@ -40,7 +40,8 @@ The project is organized in a modular fashion with the following key components:
   - `classification/`: Training metrics and model performance visualizations
   - `pretrained_umap.png`: UMAP visualization of the pretrained embeddings
 - `weights/`: Contains saved model weights
-  - `pretrained/`: Pretrained model for after modal alignment
+  - `pretrained.pth`: Pretrained model for after modal alignment
+  - `classifier.pth`: Trained classifier for `donor_id` prediction
 
 ## Implementation Details
 
@@ -111,10 +112,12 @@ The dataset contains 31,780 cells with 60,664 genes. The breakdown of cell types
 
 The classification performance metrics for donor ID prediction are as follows:
 
-| Model | Accuracy | Macro F1 | Weighted F1 |
-|-------|----------|----------|-------------|
-| Multimodal model with pretraining | 39.60% | 0.32 | 0.36 |
-| Vanilla classifier (baseline) | 48.54% | 0.42 | 0.46 |
+| Model | Alignment | Accuracy | Macro F1 | Weighted F1 |
+|-------|----------|----------|----------|-------------|
+| Multimodal w/ Adversarial | ✅ | 58.30% | 0.52 | 0.57 |
+| Multimodal w/o Adversarial | ✅ | 58.81% | 0.54 | 0.58 |
+| Multimodal w/ Adversarial | ❌ | 61.04% | 0.56 | 0.60 |
+| Vanilla Classifier (baseline) | ❌ | 63.04% | 0.59 | 0.62 |
 
 ### Key Findings
 
@@ -140,20 +143,40 @@ The classification performance metrics for donor ID prediction are as follows:
 *Visualization of the shared embedding space after pretraining*
 
 ### Training Metrics
-![Training Metrics](logs/pretraining/pretraining.jpg)
+![Training Metrics](logs/pretraining/training_metrics.png)
 *Pretraining metrics vs. steps*
 
+------
+
+![Training Metrics](logs/classification/training_metrics.png)
+*Multimodal Classifier Adversarial: ✅  Alignment: ✅*
+
+![Confusion Matrix](logs/classification/confusion_matrix.png)
+*Confusion Matrix of trained classifier*
+
+------
+
+![Training Metrics](logs/classification/training_metrics_no_align.png)
+*Multimodal Classifier Adversarial: ✅  Alignment: ❌*
+
+------
+
+![Training Metrics](logs/classification/no_adv_training_metrics.png)
+*Multimodal Classifier Adversarial: ❌ Alignment: ✅*
+
+------
+
 ![Training Metrics](logs/classification/vanilla_training_results.png)
-*Classifier training metrics vs. steps*
+*Vanilla classifier training metrics vs. steps*
 
 ### Cross-Attention Visualization
 ![Cross-Attention Visualization](logs/pretraining/cross_attention_visualization.png)
 ![Cross-Attention Visualization](logs/pretraining/avg_text_to_gene_attention.png)
-*Modal Cross-Attention Visualization*
+*Modal cross-attention visualization*
 
 ## Conclusion
 
-The project successfully demonstrates that single-cell gene expression data, combined with cell type information, can predict donor identifiers with reasonable accuracy. In addition, the results suggest that simpler models might sometimes outperform more complex architectures for specific tasks and they can converge faster.
+The project successfully demonstrates that single-cell gene expression data, combined with cell type information, can predict donor identifiers with reasonable accuracy. In addition, the results suggest that **simpler models might  outperform more complex architectures for specific tasks** and they can converge faster as they have less number of parameters and requires less computational overhead.
 
 
 ## Installation and Usage
