@@ -2,36 +2,39 @@
 
 ## Project Overview
 
+> **Note:** This page is just a high-level report of the part 2 results, plots and system components. For a more detailed explanation and running experiments please review [part2.ipynb](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/part2.ipynb).
+
 This project implements a multimodal learning system that integrates textual embeddings from cell type labels with single-cell transcriptome embeddings to predict donor identifiers. The system uses data from the CellxGene Census platform, specifically focusing on human RNA measurements from the central nervous system.
 
 The primary goal is to evaluate whether single-cell gene expression data, when combined with cell type label information, can effectively predict donor identifiers. To control for potential confounding variables, the system incorporates adversarial training to mitigate the effect of sex as a confounding factor.
+
 
 ## Key Components
 
 The project is organized in a modular fashion with the following key components:
 
 ### Data Module (`utils/data.py`)
-- `CellDataset`: A custom PyTorch dataset for handling cell data
-- `load_ann_data`: Function to load AnnData from CellxGene Census
-- `to_categorical`: Function to convert categorical data
-- `generate_negative_samples`: Function for contrastive learning
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/data.py#L15) `CellDataset`: A custom PyTorch dataset for handling cell data
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/data.py#L59) `load_ann_data`: Function to load AnnData from CellxGene Census
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/data.py#L99) `to_categorical`: Function to convert categorical data
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/data.py#L123) `generate_negative_samples`: Function for contrastive learning
 
 ### Model Architecture (`utils/model.py`)
-- `TextEncoder`: Encodes cell type labels using pretrained biomedical language models
-- `PerceiverResampler`: Module for resampling input sequences to a fixed number of latent vectors
-- `CrossModalAttention`: Implements cross-attention between modalities
-- `FusionModel`: Combines text and gene embeddings in a shared latent space
-- `UnifiedMultiModalClassifier`: Main classification model with adversarial component
-- `VanillaClassifier`: Baseline model for comparison
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/model.py#L10) `TextEncoder`: Encodes cell type labels using pretrained biomedical language models
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/model.py#L38) `PerceiverResampler`: Module for resampling input sequences to a fixed number of latent vectors
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/model.py#L94) `CrossModalAttention`: Implements cross-attention between modalities
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/model.py#L201) `FusionModel`: Combines text and gene embeddings in a shared latent space
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/model.py#L235) `UnifiedMultiModalClassifier`: Main classification model with adversarial component
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/model.py#L323) `VanillaClassifier`: Baseline model for comparison
 
 ### Trainer Infrastructure (`utils/trainer.py`)
-- `TrainerBase`: Base training framework with logging and device management
-- `PretrainTrainer`: Handles contrastive pretraining 
-- `ClassificationTrainer`: Handles adversarial classification training
-- `VanillaTrainer`: Handles baseline model training
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/trainer.py#L17) `TrainerBase`: Base training framework with logging and device management
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/trainer.py#L242) `PretrainTrainer`: Handles contrastive pretraining 
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/trainer.py#L303) `ClassificationTrainer`: Handles adversarial classification training
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/trainer.py#L561) `VanillaTrainer`: Handles baseline model training
 
 ### Loss Functions (`utils/loss.py`)
-- `ContrastiveLoss`: Implementation of contrastive loss for pretraining
+- [🔗](https://github.com/pouyan9675/ubiquitous-octo-eureka/blob/0630b9fb4346fa2d411b7c44ad5299c1d4a4a6c9/part-2/utils/loss.py#L6) `ContrastiveLoss`: Implementation of contrastive loss for pretraining
 
 ### Project Artifacts
 
@@ -52,7 +55,7 @@ The project is organized in a modular fashion with the following key components:
 - Converts categorical variables and splits data into training and testing sets
 
 ### Multimodal Integration
-- Text embeddings are generated using the BioBERT model (`dmis-lab/biobert-v1.1`)
+- Text embeddings are generated using the [BioBERT](https://huggingface.co/dmis-lab/biobert-v1.1) model (`dmis-lab/biobert-v1.1`)
 - Gene expression data is represented by Geneformer embeddings
 - Cross-attention mechanism enables information flow between modalities
 - Perceiver Resampler maps variable-length inputs to fixed-size latent representations
@@ -75,12 +78,15 @@ The project is organized in a modular fashion with the following key components:
 
 ### Training Parameters
 I found the best hyperparameters identified through optimization:
-- `attention_heads`: 2
-- `num_latent_vectors`: 16
-- `hidden_size`: 384
-- `dropout`: 0.3
-- `learning_rate`: 1e-05
-- `lambda_adv`: 0.1
+
+| Parameter | Value |
+|-----------|-------|
+| `attention_heads` | 2 |
+| `num_latent_vectors` | 16 |
+| `hidden_size` | 384 |
+| `dropout` | 0.3 |
+| `learning_rate` | 1e-05 |
+| `lambda_adv` | 0.1 |
 
 
 ## Results and Analysis
@@ -117,18 +123,18 @@ The classification performance metrics for donor ID prediction are as follows:
 | Multimodal w/ Adversarial | ✅ | 58.30% | 0.52 | 0.57 |
 | Multimodal w/o Adversarial | ✅ | 58.81% | 0.54 | 0.58 |
 | Multimodal w/ Adversarial | ❌ | 61.04% | 0.56 | 0.60 |
-| Vanilla Classifier (baseline) | ❌ | 63.04% | 0.59 | 0.62 |
+| Vanilla Classifier (baseline) | ❌ | **63.04%** | **0.59** | **0.62** |
 
 ### Key Findings
 
-1. **Donor Prediction**: Both models demonstrated the ability to predict donor IDs with accuracy significantly above random chance, indicating that single-cell gene expression data contains donor-specific signals.
+1. **Donor Prediction**: All models demonstrated a reasonable ability to predict donor IDs with accuracy significantly above random chance, indicating that single-cell gene expression data contains donor-specific signals.
 
 2. **Pretraining Effect**: Contrary to expectations, the vanilla classifier without pretraining achieved higher accuracy. This could be due to several factors:
    - The pretraining task may not align perfectly with the downstream classification task
    - The more complex model might require more training data or epochs
    - The vanilla model has fewer parameters and might converge faster
 
-3. **Modality Alignment**: While the multimodal approach demonstrated successful embedding alignment in shared space (as shown in the UMAP visualization), the simpler concatenation approach of the vanilla classifier performed better for classification.
+3. **Modality Alignment**: While the multimodal approach demonstrated successful embedding alignment in shared space (as shown in the [UMAP visualization](#umap-visualization)), the simpler concatenation approach of the vanilla classifier performed better for classification.
 
 4. **Cross-Attention Analysis**: The visualization of cross-attention weights reveals interesting patterns in how the model attends to different aspects of the modalities.
 
@@ -139,7 +145,7 @@ The classification performance metrics for donor ID prediction are as follows:
 *UMAP projection of cells colored by cell type, based on Geneformer embeddings*
 
 ### Embedding Space Visualization
-![Embedding Space Visualization](logs/pretrained_umap.png)
+![Embedding Space Visualization](logs/pretrained_umap.png)<a name="umap-visualization"></a>
 *Visualization of the shared embedding space after pretraining*
 
 ### Training Metrics
