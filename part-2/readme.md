@@ -62,6 +62,26 @@ The project is organized in a modular fashion with the following key components:
 - **Adversarial component**: Mitigates the influence of sex as a confounding variable
 - **Hyperparameter optimization**: Uses Bayesian optimization for parameter tuning
 
+### Hyperparameter Optimization
+- The project uses Optuna for Bayesian optimization of key hyperparameters
+- Parameters optimized include:
+  - Learning rate
+  - Dropout probability
+  - Number of latent vectors in the Perceiver Resampler
+  - Hidden dimensions in the Perceiver Resampler
+  - Weight for adversarial loss (`lambda_adv`)
+- Results are captured and the best parameter set is selected for final model training
+
+### Training Parameters
+I found the best hyperparameters identified through optimization:
+- `attention_heads`: 2
+- `num_latent_vectors`: 16
+- `hidden_size`: 384
+- `dropout`: 0.3
+- `learning_rate`: 1e-05
+- `lambda_adv`: 0.1
+
+
 ## Results and Analysis
 
 ### Dataset Statistics
@@ -131,28 +151,22 @@ The classification performance metrics for donor ID prediction are as follows:
 ![Cross-Attention Visualization](logs/pretraining/avg_text_to_gene_attention.png)
 *Modal Cross-Attention Visualization*
 
-## Conclusion and Future Work
+## Conclusion
 
-The project successfully demonstrates that single-cell gene expression data, combined with cell type information, can predict donor identifiers with reasonable accuracy. However, the results suggest that simpler models might sometimes outperform more complex architectures for specific tasks.
+The project successfully demonstrates that single-cell gene expression data, combined with cell type information, can predict donor identifiers with reasonable accuracy. In addition, the results suggest that simpler models might sometimes outperform more complex architectures for specific tasks and they can converge faster.
 
-Future work could explore:
-1. Extended pretraining with larger datasets
-2. Alternative fusion strategies for multimodal integration
-3. More sophisticated adversarial training approaches
-4. Deeper analysis of the attention patterns to gain biological insights
-5. Testing the approach on different tissue types or cell populations
 
 ## Installation and Usage
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/multimodal-gene-expression.git
-cd multimodal-gene-expression
+git clone git@github.com:pouyan9675/ubiquitous-octo-eureka.git
+cd part-2
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the code
+# Run jupyter notebook
 jupyter notebook
 ```
 
@@ -173,4 +187,4 @@ Open the notebook `part2.ipynb` to explore the analysis and results.
 
 ## Acknowledgments
 
-This project utilizes data from the CellxGene Census platform and the Geneformer foundation model for single-cell embeddings.
+This project utilizes data from the [CellxGene Census](https://chanzuckerberg.github.io/cellxgene-census/) platform and the [Geneformer](https://geneformer.readthedocs.io/en/latest/) foundation model for single-cell embeddings.
