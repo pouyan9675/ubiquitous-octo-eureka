@@ -35,14 +35,74 @@ class TextEncoder(nn.Module):
         return cls_embedding
 
 
+class PerceiverResampler(nn.Module):
+    def __init__(self, 
+                 input_dim, 
+                 num_latent_vectors=64, 
+                 latent_dim=256, 
+                 num_heads=8):
+        super().__init__()
+        
+        # Trainable latent vectors
+        self.latent_vectors = nn.Parameter(torch.randn(num_latent_vectors, latent_dim))
+        
+        # Projection layer to align input dimension
+        self.input_projection = nn.Linear(input_dim, latent_dim)
+        
+        # Multi-head cross-attention
+        self.cross_attention = nn.MultiheadAttention(
+            embed_dim=latent_dim, 
+            num_heads=num_heads
+        )
+        
+        # Layer normalization and feed-forward
+        self.layer_norm1 = nn.LayerNorm(latent_dim)
+        self.layer_norm2 = nn.LayerNorm(latent_dim)
+        
+        self.feed_forward = nn.Sequential(
+            nn.Linear(latent_dim, latent_dim * 4),
+            nn.GELU(),
+            nn.Linear(latent_dim * 4, latent_dim)
+        )
+    
+    def forward(self, input_embeddings):
+        # Project input to latent dimension
+        input_embeddings = self.input_projection(input_embeddings)
+        
+        # Prepare latent vectors and input
+        batch_size = input_embeddings.size(0)
+        latent_vectors = self.latent_vectors.unsqueeze(1).repeat(1, batch_size, 1)
+        input_embeddings = input_embeddings.unsqueeze(0)
+        
+        # Cross-attention
+        attn_output, attn_weights = self.cross_attention(
+            latent_vectors,  # query
+            input_embeddings,  # key
+            input_embeddings  # value
+        )
+        
+        # Residual connection and layer norm
+        attn_output = self.layer_norm1(attn_output + latent_vectors)
+        
+        # Feed-forward
+        ff_output = self.feed_forward(attn_output)
+        output = self.layer_norm2(ff_output + attn_output)
+        
+        return output.transpose(0, 1), attn_weights
+
+
 class CrossModalAttention(nn.Module):
     """
-    A PyTorch module that applies cross-attention between two input features using Multihead Attention.
-    Each input feature is attended to by the other input feature (replacing q and k/v with each other).
+    A module that applied perceiver resample to both modalities and then performs a bi-directional
+    cross-attention to each modal attend to the other modality.
 
+    Bi-directional Cross Attention:
     Given two input feature tensors with different dimensions (dim1 and dim2), this module applies:
+    - Perceiver Resampler applied to input1 -> (batch_size, num_latent_vectors, hidden_dim)
+    - Perceiver Resampler applied to input2 -> (batch_size, num_latent_vectors, hidden_dim)
     - Attention from input1 (query) attending to input2 (key, value).
     - Attention from input2 (query) attending to input1 (key, value).
+    - Apply mean pooling to both sequences -> (batch_size, hidden_dim)
     
     Parameters:
     -----------
@@ -52,20 +112,13 @@ class CrossModalAttention(nn.Module):
         Embedding dimension of input2.
     num_heads : int
         Number of attention heads.
-    
-    Inputs:
-    -------
-    input1 : torch.Tensor
-        Tensor of shape (batch_size, dim1).
-    input2 : torch.Tensor
-        Tensor of shape (batch_size, dim2).
 
     Returns:
     --------
     output1 : torch.Tensor
-        Cross-attended representation of input1 (batch_size, dim1).
+        Cross-attended representation of input1 (batch_size, hidden_size).
     output2 : torch.Tensor
-        Cross-attended representation of input2 (batch_size, dim2).
+        Cross-attended representation of input2 (batch_size, hidden_size).
     """
 
     def __init__(self, 
@@ -73,52 +126,76 @@ class CrossModalAttention(nn.Module):
                 dim1: int,
                 dim2: int,
                 num_heads: int = 8,
+                num_latent_vectors: int = 64,
                 dropout: float = 0.1,
-                internal_attn = False,
     ):
         super().__init__()
+        self.text_perceiver = PerceiverResampler(
+            input_dim=dim1,
+            num_latent_vectors=num_latent_vectors,
+            latent_dim=hidden_dim,
+            num_heads=num_heads
+        )
+        
+        self.gene_perceiver = PerceiverResampler(
+            input_dim=dim2,
+            num_latent_vectors=num_latent_vectors,
+            latent_dim=hidden_dim,
+            num_heads=num_heads
+        )
+        
         self.x_attn = nn.MultiheadAttention(
-            embed_dim=1 if internal_attn else hidden_dim,
-            num_heads=1 if internal_attn else num_heads,
+            embed_dim=hidden_dim,
+            num_heads=num_heads,
             batch_first=True
         )
-        self.proj_1 = nn.Linear(dim1, hidden_dim)
-        self.proj_2 = nn.Linear(dim2, hidden_dim)
+        
+        # Add normalization layers for each modality
+        self.norm1 = nn.LayerNorm(hidden_dim)
+        self.norm2 = nn.LayerNorm(hidden_dim)
+        
         self.dropout = nn.Dropout(dropout)
-        self.internal_attn = internal_attn
 
 
     def forward(self, input1: torch.Tensor, input2: torch.Tensor, return_attn: bool = False):
+        # Apply Perceiver Resamplers to inputs
+        text_latents, text_attn = self.text_perceiver(input1)  # [batch, num_latent_vectors, hidden_dim]
+        gene_latents, gene_attn = self.gene_perceiver(input2)  # [batch, num_latent_vectors, hidden_dim]
         
-        input1 = self.dropout(self.proj_1(input1))
-        input2 = self.dropout(self.proj_2(input2))
+        # Apply dropout
+        text_latents = self.dropout(text_latents)
+        gene_latents = self.dropout(gene_latents)
         
-        # Add sequence length dimension (seq_len=1)
-        input1 = input1.unsqueeze(1)   # Shape: (batch_size, 1, dim1)
-        input2 = input2.unsqueeze(1)   # Shape: (batch_size, 1, dim2)
+        # I have applied cross attention bi-directional as gene and cell_type
+        # do not have any priorty over each other to apply it just in one way
         
-        if self.internal_attn:
-            input1 = input1.transpose(1,2) # Shape: (batch_size, dim1, 1)
-            input2 = input2.transpose(1,2) # Shape: (batch_size, dim2, 1)
-
-        # Cross-attention: input1 attends to input2
-        output1, attn_weights_1 = self.x_attn(input1, input2, input2)  # Query: input1, Key/Value: input2
+        # Cross-attention: text attends to gene
+        # Query: text_latents, Key/Value: gene_latents
+        text_attended, cross_attn_weights_1 = self.x_attn(
+            text_latents, gene_latents, gene_latents
+        )
+        # Apply residual connection and layer norm
+        text_latents = self.norm1(text_latents + self.dropout(text_attended))
         
-        # Cross-attention: input2 attends to input1
-        output2, attn_weights_2 = self.x_attn(input2, input1, input1)  # Query: input2, Key/Value: input1
-
-        if self.internal_attn:
-            output1 = output1.transpose(1,2)
-            output2 = output2.transpose(1,2)
-
-        # Remove sequence dimension
-        output1 = self.dropout(output1).squeeze(1)  # Shape: (batch_size, hidden_dim)
-        output2 = self.dropout(output2).squeeze(1)  # Shape: (batch_size, hidden_dim)
-
+        # Cross-attention: gene attends to text
+        # Query: gene_latents, Key/Value: text_latents
+        gene_attended, cross_attn_weights_2 = self.x_attn(
+            gene_latents, text_latents, text_latents
+        )
+        # Apply residual connection and layer norm
+        gene_latents = self.norm2(gene_latents + self.dropout(gene_attended))
+        
+        # Apply pooling to get a single vector per modality
+        # Here a self-attention with a single trainable query can be used to 
+        # have a smarter pooling but due to simpler implementation I just use
+        # a single mean pooling.
+        text_pooled = torch.mean(text_attended, dim=1)  # [batch, hidden_dim]
+        gene_pooled = torch.mean(gene_attended, dim=1)  # [batch, hidden_dim]
+        
         if return_attn:
-            return (output1, output2), (attn_weights_1, attn_weights_2)
+            return (text_pooled, gene_pooled), (cross_attn_weights_1, cross_attn_weights_2)
         else:
-            return output1, output2
+            return text_pooled, gene_pooled
     
     
 class FusionModel(nn.Module):
@@ -127,9 +204,9 @@ class FusionModel(nn.Module):
                 gene_input_dim: int = 512,
                 hidden_size: int = 256,
                 attention_heads: int = 8,
+                num_latent_vectors: int = 64,
                 dropout: float = 0.1,
                 freeze_text_encoder: bool = True,
-                internal_attn: bool = False,
                 add_cross_attn: bool = True,
         ):
         super().__init__()
@@ -142,7 +219,7 @@ class FusionModel(nn.Module):
                 dim1=self.text_encoder.text_hidden_dim, 
                 dim2=gene_input_dim, 
                 num_heads=attention_heads,
-                internal_attn=internal_attn,
+                num_latent_vectors=num_latent_vectors,
                 dropout=dropout,
             )
         
