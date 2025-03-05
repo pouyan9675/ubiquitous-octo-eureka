@@ -158,7 +158,7 @@ The classification performance metrics for donor ID prediction are as follows:
 *Multimodal Classifier Adversarial: ✅  Alignment: ✅*
 
 ![Confusion Matrix](logs/classification/confusion_matrix.png)
-*Confusion Matrix of trained classifier*
+*Confusion Matrix of primary trained classifier with modal alignment and adversarial training*
 
 ------
 
@@ -176,6 +176,9 @@ The classification performance metrics for donor ID prediction are as follows:
 *Vanilla classifier training metrics vs. steps*
 
 ### Cross-Attention Visualization
+
+The following are cross attention visualization of the pretrained modal after modal alignment.
+
 ![Cross-Attention Visualization](logs/pretraining/cross_attention_visualization.png)
 ![Cross-Attention Visualization](logs/pretraining/avg_text_to_gene_attention.png)
 *Modal cross-attention visualization*
