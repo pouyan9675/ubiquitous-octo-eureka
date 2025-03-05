@@ -236,7 +236,7 @@ class TrainerBase:
 
 
     def save_model(self, path: str):
-        torch.save(self.model.state_dict(), os.path.join(path, 'model.pth'))
+        torch.save(self.model.state_dict(), path)
 
 
 class PretrainTrainer(TrainerBase):
